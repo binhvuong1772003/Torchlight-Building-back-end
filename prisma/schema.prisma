@@ -1,0 +1,525 @@
+////////////////////////////////////////////////////////////
+// GENERATOR & DATASOURCE
+////////////////////////////////////////////////////////////
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+////////////////////////////////////////////////////////////
+// ENUMS
+////////////////////////////////////////////////////////////
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum ItemRarity {
+  RARE
+  LEGENDARY
+  PRICELESS
+}
+
+enum ItemCategory {
+  WEAPON
+  SHIELD
+  HELMET
+  CHEST
+  GLOVES
+  BELT
+  SHOES
+  AMULET
+  RING
+}
+
+enum WeaponHandedness {
+  ONE_HAND
+  TWO_HAND
+}
+
+enum EquipSlot {
+  HEAD
+  CHEST
+  GLOVES
+  BELT
+  SHOES
+  AMULET
+  RING_1
+  RING_2
+  HAND_1
+  HAND_2
+}
+
+enum AffixType {
+  BASE
+  PREFIX
+  SUFFIX
+  LEGENDARY
+}
+
+enum AffixTier {
+  BASIC      // T2
+  ADVANCE    // T1
+  ULTIMATE   // T0
+  LEGENDARY  // Legendary only
+}
+
+enum ImageType {
+  ITEM_BASE
+  ITEM_CUSTOM
+  CHARACTER_AVATAR
+  OTHER
+}
+
+enum StatValueType {
+  FLAT
+  PERCENTAGE
+  MULTIPLIER
+}
+
+enum StatCategory {
+  OFFENSIVE
+  DEFENSIVE
+  UTILITY
+  RESOURCE
+}
+
+////////////////////////////////////////////////////////////
+// AUTHENTICATION & USER
+////////////////////////////////////////////////////////////
+
+model User {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  email         String    @unique
+  name          String?
+  avatar        String?
+  role          UserRole  @default(USER)
+
+  googleId      String?   
+  password      String?
+
+  isActive      Boolean   @default(true)
+  emailVerified Boolean   @default(false)
+  refreshToken  String?
+
+  characters    Character[]
+  builds        Build[]
+  sessions      Session[]
+  emailVerificationTokens EmailVerificationToken[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([role])
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  token     String   @unique
+  expiresAt DateTime
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Session {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String   @db.ObjectId
+  token        String   @unique
+  expiresAt    DateTime
+  
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+////////////////////////////////////////////////////////////
+// IMAGE
+////////////////////////////////////////////////////////////
+
+model Image {
+  id              String      @id @default(auto()) @map("_id") @db.ObjectId
+  publicId        String      @unique
+  url             String
+  secureUrl       String
+  format          String
+  width           Int
+  height          Int
+  bytes           Int
+  type            ImageType   @default(OTHER)
+  
+  itemBases       ItemBase[]
+  items           Item[]
+  legendaryTemplates LegendaryTemplate[]
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([type])
+}
+
+////////////////////////////////////////////////////////////
+// STAT DEFINITIONS
+////////////////////////////////////////////////////////////
+
+model StatDefinition {
+  id            String          @id @default(auto()) @map("_id") @db.ObjectId
+  key           String          @unique
+  name          String
+  description   String?
+  valueType     StatValueType
+  category      StatCategory
+  
+  affixStats    AffixStat[]
+  baseAffixStats BaseAffixStat[]
+  
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  
+  @@index([category])
+  @@index([valueType])
+}
+
+////////////////////////////////////////////////////////////
+// AFFIX DEFINITIONS
+////////////////////////////////////////////////////////////
+
+model Affix {
+  id            String      @id @default(auto()) @map("_id") @db.ObjectId
+  key           String      @unique
+  name          String
+  description   String?
+  type          AffixType
+  tier          AffixTier
+  tierlevel     Int
+  
+  tags          String[]
+  
+  minItemLevel  Int
+  maxItemLevel  Int?
+
+  stats         AffixStat[]   @relation("AffixToStats")
+  itemMods      ItemMod[]     @relation("AffixToItemMod")
+  legendaryTemplateMods LegendaryTemplateMod[]
+  
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([type])
+  @@index([tier])
+  @@index([minItemLevel])
+}
+
+model AffixStat {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  affixId     String   @db.ObjectId
+  statDefId   String   @db.ObjectId
+
+  affix       Affix          @relation("AffixToStats", fields: [affixId], references: [id], onDelete: Cascade)
+  statDef     StatDefinition @relation(fields: [statDefId], references: [id], onDelete: Cascade)
+  
+  rollTables  AffixStatRollTable[]
+  itemModRolls ItemModRoll[]
+  legendaryTemplateModRolls LegendaryTemplateModRoll[]
+
+  @@index([affixId])
+  @@index([statDefId])
+}
+
+model AffixStatRollTable {
+  id           String       @id @default(auto()) @map("_id") @db.ObjectId
+  affixStatId  String       @db.ObjectId
+  category     ItemCategory
+  
+  minValue     Float
+  maxValue     Float
+  
+  affixStat    AffixStat    @relation(fields: [affixStatId], references: [id], onDelete: Cascade)
+  
+  @@unique([affixStatId, category])
+  @@index([affixStatId])
+  @@index([category])
+}
+
+////////////////////////////////////////////////////////////
+// ITEM BASE
+////////////////////////////////////////////////////////////
+
+model BaseAffix {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  key         String   @unique
+  name        String
+  description String?
+  minItemLevel Int     @default(1)
+  isPriceless  Boolean @default(false)
+  
+  stats       BaseAffixStat[]
+  itemBases   ItemBaseAffix[]  // ← many-to-many
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([minItemLevel])
+  @@index([isPriceless])
+}
+
+model ItemBase {
+  id          String            @id @default(auto()) @map("_id") @db.ObjectId
+  key         String            @unique
+  name        String
+  description String?
+  category    ItemCategory
+  imageId     String?           @db.ObjectId
+
+  baseAffixes ItemBaseAffix[]  // ← many-to-many
+  items       Item[]
+  legendaryTemplates LegendaryTemplate[]
+  
+  image       Image?            @relation(fields: [imageId], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  @@index([imageId])
+  @@index([category])
+}
+
+// Junction table
+model ItemBaseAffix {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  itemBaseId   String    @db.ObjectId
+  baseAffixId  String    @db.ObjectId
+
+  itemBase     ItemBase  @relation(fields: [itemBaseId], references: [id], onDelete: Cascade)
+  baseAffix    BaseAffix @relation(fields: [baseAffixId], references: [id], onDelete: Cascade)
+
+  @@unique([itemBaseId, baseAffixId])
+  @@index([itemBaseId])
+  @@index([baseAffixId])
+}
+
+model BaseAffixStat {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  baseAffixId   String   @db.ObjectId
+  statDefId     String   @db.ObjectId
+  
+  value         Float
+  
+  baseAffix     BaseAffix      @relation(fields: [baseAffixId], references: [id], onDelete: Cascade)
+  statDef       StatDefinition @relation(fields: [statDefId], references: [id], onDelete: Cascade)
+  
+  @@index([baseAffixId])
+  @@index([statDefId])
+}
+
+////////////////////////////////////////////////////////////
+// LEGENDARY TEMPLATE
+////////////////////////////////////////////////////////////
+
+model LegendaryTemplate {
+  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String?
+  baseId      String      @db.ObjectId
+  imageId     String?     @db.ObjectId
+  requiredLevel Int
+
+  base        ItemBase    @relation(fields: [baseId], references: [id], onDelete: Cascade)
+  image       Image?      @relation(fields: [imageId], references: [id], onDelete: SetNull)
+
+  mods        LegendaryTemplateMod[]
+  items       Item[]
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([baseId])
+  @@index([imageId])
+}
+
+model LegendaryTemplateMod {
+  id            String      @id @default(auto()) @map("_id") @db.ObjectId
+  templateId    String      @db.ObjectId
+  affixId       String      @db.ObjectId
+
+  type          AffixType
+  tier          AffixTier
+
+  customRolls   LegendaryTemplateModRoll[]
+
+  template      LegendaryTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  affix         Affix             @relation(fields: [affixId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+  @@index([affixId])
+}
+
+model LegendaryTemplateModRoll {
+  id                      String      @id @default(auto()) @map("_id") @db.ObjectId
+  legendaryTemplateModId  String      @db.ObjectId
+  affixStatId             String      @db.ObjectId
+
+  minValue                Float
+  maxValue                Float
+
+  legendaryTemplateMod    LegendaryTemplateMod @relation(fields: [legendaryTemplateModId], references: [id], onDelete: Cascade)
+  affixStat               AffixStat            @relation(fields: [affixStatId], references: [id], onDelete: Cascade)
+
+  @@unique([legendaryTemplateModId, affixStatId])
+  @@index([legendaryTemplateModId])
+  @@index([affixStatId])
+}
+
+////////////////////////////////////////////////////////////
+// ITEM INSTANCE
+////////////////////////////////////////////////////////////
+
+model Item {
+  id                String     @id @default(auto()) @map("_id") @db.ObjectId
+  baseId            String     @db.ObjectId
+  customImageId     String?    @db.ObjectId
+
+  itemLevel         Int
+  rarity            ItemRarity
+
+  legendaryTemplateId String?    @db.ObjectId
+  ownerUserId         String?    @db.ObjectId
+  
+  legendaryTemplate   LegendaryTemplate? @relation(fields: [legendaryTemplateId], references: [id], onDelete: SetNull)
+
+  mods              ItemMod[]
+  base              ItemBase   @relation(fields: [baseId], references: [id], onDelete: Cascade)
+  customImage       Image?     @relation(fields: [customImageId], references: [id], onDelete: SetNull)
+
+  equips            CharacterEquip[]
+  buildItems        BuildItem[]
+
+  createdAt         DateTime   @default(now())
+
+  @@index([baseId])
+  @@index([itemLevel])
+  @@index([rarity])
+  @@index([customImageId])
+  @@index([legendaryTemplateId])
+  @@index([ownerUserId])
+}
+
+model ItemMod {
+  id                String     @id @default(auto()) @map("_id") @db.ObjectId
+  itemId            String     @db.ObjectId
+  affixId           String     @db.ObjectId
+
+  type              AffixType
+  tier              AffixTier
+
+  rolls             ItemModRoll[]
+
+  item              Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  affix             Affix     @relation("AffixToItemMod", fields: [affixId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([affixId])
+  @@index([tier])
+  @@index([type])
+}
+
+model ItemModRoll {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  itemModId     String   @db.ObjectId
+  affixStatId   String   @db.ObjectId
+
+  value         Float
+
+  itemMod       ItemMod   @relation(fields: [itemModId], references: [id], onDelete: Cascade)
+  affixStat     AffixStat @relation(fields: [affixStatId], references: [id], onDelete: Cascade)
+
+  @@index([itemModId])
+  @@index([affixStatId])
+}
+
+////////////////////////////////////////////////////////////
+// CHARACTER & EQUIP
+////////////////////////////////////////////////////////////
+
+model Character {
+  id        String           @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String           @db.ObjectId
+  name      String
+  
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  equips    CharacterEquip[]
+  
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([userId])
+}
+
+model CharacterEquip {
+  id           String     @id @default(auto()) @map("_id") @db.ObjectId
+  characterId  String     @db.ObjectId
+  itemId       String     @db.ObjectId
+
+  slot         EquipSlot
+
+  character    Character  @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  item         Item       @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([characterId, slot])
+  @@index([characterId])
+  @@index([itemId])
+}
+
+////////////////////////////////////////////////////////////
+// BUILD SYSTEM
+////////////////////////////////////////////////////////////
+
+model Build {
+  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String      @db.ObjectId
+  name        String
+  description String?
+  isPublic    Boolean     @default(false)
+  
+  likes       Int         @default(0)
+  views       Int         @default(0)
+  
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items       BuildItem[]
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([userId])
+  @@index([isPublic])
+  @@index([likes])
+}
+
+model BuildItem {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  buildId   String    @db.ObjectId
+  itemId    String    @db.ObjectId
+  slot      EquipSlot
+  notes     String?
+  
+  build     Build     @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  item      Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  
+  @@unique([buildId, slot])
+  @@index([buildId])
+  @@index([itemId])
+}
